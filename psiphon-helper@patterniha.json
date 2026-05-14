@@ -1,0 +1,200 @@
+{
+  "__Credits__": {
+    "creator": "@patterniha",
+    "donate1": "USDT (BEP20): 0x76a768B53Ca77B43086946315f0BDF21156bF424",
+    "donate2": "USDT (TRC20): TU5gKvKqcXPn8itp1DouBCwcqGHMemBm8o"
+  },
+
+
+  "remarks": "psiphon-helper@patterniha_v1",
+
+  "version": {
+    "min": "26.2.6"
+  },
+
+  "log": {
+    "loglevel": "warning", "dnsLog": false, "access": "none"
+  },
+
+  "policy": {
+    "levels": {
+      "0": {
+        "uplinkOnly": 0,
+        "downlinkOnly": 0
+      }
+    }
+  },
+
+  "dns":{
+    "hosts": {
+	  "fastly.redirect": "pypi.org",
+      "akamai.redirect": "92.123.102.43"
+    },
+    "servers": [
+	  {
+	    "address": "localhost",
+	    "unexpectedIPs": ["10.10.34.0/24", "2001:4188:2:600::/64"]
+      }
+    ],
+    "queryStrategy": "UseSystem",
+    "useSystemHosts": true,
+    "tag": "dns_inbound"
+  },
+
+  "inbounds": [
+    {
+      "tag": "mixed-in",
+      "port": 10808,
+      "protocol": "mixed",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["tls"]
+      },
+      "streamSettings": {
+        "sockopt": {
+          "tcpKeepAliveInterval": 1,
+          "tcpKeepAliveIdle": 11
+        }
+      }
+    },
+	{
+      "port": 11666,
+      "tag": "tls-decrypt-h11",
+      "protocol": "tunnel",
+      "settings": {
+        "network": "tcp",
+        "port": 443,
+        "followRedirect": true
+      },
+      "streamSettings": {
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": ["http/1.1"],
+          "certificates": [
+            {
+              "usage": "issue",
+              "certificateFile": "mycert.crt",
+              "keyFile": "mycert.key"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "port": 11777,
+      "tag": "tls-decrypt-h211",
+      "protocol": "tunnel",
+      "settings": {
+        "network": "tcp",
+        "port": 443,
+        "followRedirect": true
+      },
+      "streamSettings": {
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": ["h2","http/1.1"],
+          "certificates": [
+            {
+              "usage": "issue",
+              "certificateFile": "mycert.crt",
+              "keyFile": "mycert.key"
+            }
+          ]
+        }
+      }
+    }
+  ],
+
+  "outbounds": [
+	{
+      "tag": "redirect-out-h11",
+      "protocol": "direct",
+      "settings": {
+        "redirect": "127.0.0.1:11666"
+      }
+    },
+    {
+      "tag": "redirect-out-h211",
+      "protocol": "direct",
+      "settings": {
+        "redirect": "127.0.0.1:11777"
+      }
+    },
+    {
+      "tag": "tls-repack-akamai",
+      "protocol": "direct",
+      "settings": {
+        "redirect": "akamai.redirect:443"
+      },
+      "streamSettings": {
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "92.123.102.43",
+          "verifyPeerCertByName": "fromMitM,92.123.102.43,a248.e.akamai.net,a.akamaized.net,a.akamaized-staging.net,a.akamaihd.net,a.akamaihd-staging.net,www.akamai.com",
+          "alpn": ["fromMitM"],
+          "fingerprint": "chrome"
+        },
+		"sockopt": {
+          "domainStrategy": "ForceIP",
+          "happyEyeballs": {
+            "tryDelayMs": 300,
+            "prioritizeIPv6": false,
+            "interleave": 2,
+            "maxConcurrentTry": 20
+          }
+        }
+      }
+    },
+	{
+      "tag": "tls-repack-fastly",
+      "protocol": "direct",
+      "settings": {
+        "redirect": "fastly.redirect:443"
+      },
+      "streamSettings": {
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "pypi.org",
+          "verifyPeerCertByName": "fromMitM,www.python.org,pypi.org,fastly.com,www.fastly.com,developer.fastly.com,githubassets.com,github.com,github.io,githubusercontent.com",
+          "alpn": ["fromMitM"],
+          "fingerprint": "chrome"
+        },
+		"sockopt": {
+          "domainStrategy": "ForceIP",
+          "happyEyeballs": {
+            "tryDelayMs": 300,
+            "prioritizeIPv6": false,
+            "interleave": 2,
+            "maxConcurrentTry": 20
+          }
+        }
+      }
+    }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      {
+	   "outboundTag": "tls-repack-akamai",
+       "inboundTag": ["tls-decrypt-h11"]
+	  },
+      {
+	   "outboundTag": "tls-repack-fastly",
+       "inboundTag": ["tls-decrypt-h211"]
+	  },
+      {
+        "outboundTag": "redirect-out-h11",
+        "domain": ["regexp:.*akamai.*"]
+      },
+	  {
+        "outboundTag": "redirect-out-h211",
+        "ip": ["geoip:fastly"]
+      },
+      {
+	   "outboundTag": "redirect-out-h11",
+       "port": "0-65535"
+      }
+    ]
+  }
+}
